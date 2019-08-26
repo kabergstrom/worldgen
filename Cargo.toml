@@ -1,0 +1,17 @@
+[package]
+name = "worldgen"
+version = "0.1.0"
+authors = ["Karl Bergström <karl.anton.bergstrom@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+voronoi = { path = "../rust_voronoi" }
+petgraph = "0.4"
+image = "0.22"
+imageproc = "0.19"
+itertools = "0.8"
+nalgebra = "0.18"
+rand = "0.7.0"
+conv = "0.3"
