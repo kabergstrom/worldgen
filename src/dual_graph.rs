@@ -50,8 +50,8 @@ fn poly_centroids(diagram: &voronoi::DCEL) -> Vec<voronoi::Point> {
         let num_vertices = num_face_vertices[i];
         let face_pt = face_centroids[i];
         face_centroids[i] = voronoi::Point::new(
-            face_pt.x.into_inner() / num_vertices as f64,
-            face_pt.y.into_inner() / num_vertices as f64,
+            face_pt.x.into_inner() / f64::from(num_vertices),
+            face_pt.y.into_inner() / f64::from(num_vertices),
         );
     }
 
@@ -62,7 +62,6 @@ fn poly_centroids(diagram: &voronoi::DCEL) -> Vec<voronoi::Point> {
 pub fn gen_points(count: usize, bounds: &voronoi::Point) -> Vec<voronoi::Point> {
     let mut rng = rand::thread_rng();
     (0..count)
-        .into_iter()
         .map(|_| {
             let x: f64 = rng.sample(rand::distributions::Standard);
             let y: f64 = rng.sample(rand::distributions::Standard);
@@ -75,7 +74,7 @@ fn gen_voronoi(
     dims: voronoi::Point,
     num_points: usize,
     num_lloyd_iterations: u32,
-) -> (voronoi::DCEL, Vec<voronoi::Point>) {
+) -> voronoi::DCEL {
     let points = gen_points(num_points, &dims);
     let mut vor_diagram;
     let mut points: Vec<voronoi::Point> = points;
@@ -88,7 +87,7 @@ fn gen_voronoi(
         points = poly_centroids(&vor_diagram);
         i += 1;
     }
-    (vor_diagram, points)
+    vor_diagram
 }
 
 fn get_or_insert_border_node(
@@ -132,21 +131,22 @@ pub fn gen_dual_graph(
     num_points: usize,
     num_lloyd_iterations: u32,
 ) -> (RegionGraph, BorderGraph) {
-    let (vor_diagram, points) = gen_voronoi(
-        voronoi::Point::new(dims.x as f64, dims.y as f64),
+    let vor_diagram = gen_voronoi(
+        voronoi::Point::new(f64::from(dims.x), f64::from(dims.y)),
         num_points,
         num_lloyd_iterations,
     );
-    let points: Vec<Vector2<f32>> = points
-        .iter()
-        .map(|v| Vector2::new(v.x.into_inner() as f32, v.y.into_inner() as f32))
-        .collect();
 
     let mut region_graph = RegionGraph::new_undirected();
     let mut border_graph = BorderGraph::new_undirected();
     let mut border_node_map: HashMap<usize, BorderNodeIdx> = HashMap::new();
     let mut region_node_map: HashMap<usize, RegionNodeIdx> = HashMap::new();
-    for (i, face) in vor_diagram.faces.iter().take(points.len()).enumerate() {
+    for (i, face) in vor_diagram
+        .faces
+        .iter()
+        .take(vor_diagram.faces.len() - 1)
+        .enumerate()
+    {
         let region_node_idx = get_or_insert_region_node(
             &mut region_node_map,
             &mut region_graph,
@@ -208,7 +208,10 @@ pub fn gen_dual_graph(
             assert!(regions.len() == 2);
             let region_a = regions[0];
             let region_b = regions[1];
-            if let None = region_graph.find_edge_undirected(region_a, region_b) {
+            if region_graph
+                .find_edge_undirected(region_a, region_b)
+                .is_none()
+            {
                 region_graph.add_edge(
                     region_a,
                     region_b,
@@ -222,6 +225,7 @@ pub fn gen_dual_graph(
     }
     for edge in region_graph.edge_references() {
         let borders = &edge.weight().borders;
+        assert!(borders.len() == 2);
         let border_a = borders[0];
         let border_b = borders[1];
         let (edge_idx, _) = border_graph
