@@ -59,7 +59,7 @@ fn poly_centroids(diagram: &voronoi::DCEL) -> Vec<voronoi::Point> {
     face_centroids
 }
 
-pub fn gen_points(count: usize, bounds: &voronoi::Point) -> Vec<voronoi::Point> {
+fn gen_points(count: usize, bounds: &voronoi::Point) -> Vec<voronoi::Point> {
     let mut rng = rand::thread_rng();
     (0..count)
         .map(|_| {
