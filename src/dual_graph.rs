@@ -8,28 +8,31 @@ pub type BorderNodeIdx = NodeIndex;
 pub type BorderEdgeIdx = petgraph::graph::EdgeIndex;
 pub type RegionNodeIdx = NodeIndex;
 pub type RegionEdgeIdx = petgraph::graph::EdgeIndex;
+
 #[derive(Debug)]
-pub struct BorderNode {
-    regions: Vec<RegionNodeIdx>,
-    pos: Vector2<f32>,
+pub struct BorderNode<T = ()> {
+    pub(crate) regions: Vec<RegionNodeIdx>,
+    pub(crate) pos: Vector2<f32>,
+    pub(crate) value: T,
 }
 #[derive(Debug)]
 pub struct BorderEdge {
-    region_edge: Option<RegionEdgeIdx>,
-    regions: Vec<RegionNodeIdx>,
+    pub(crate) region_edge: Option<RegionEdgeIdx>,
+    pub(crate) regions: Vec<RegionNodeIdx>,
 }
 #[derive(Debug)]
-pub struct RegionNode {
-    borders: Vec<BorderNodeIdx>,
-    pos: Vector2<f32>,
+pub struct RegionNode<T = ()> {
+    pub(crate) borders: Vec<BorderNodeIdx>,
+    pub(crate) pos: Vector2<f32>,
+    pub(crate) value: T,
 }
 #[derive(Debug)]
 pub struct RegionEdge {
-    border_edge: Option<BorderEdgeIdx>,
-    borders: Vec<BorderNodeIdx>,
+    pub(crate) border_edge: Option<BorderEdgeIdx>,
+    pub(crate) borders: Vec<BorderNodeIdx>,
 }
-pub type RegionGraph = petgraph::graph::UnGraph<RegionNode, RegionEdge>;
-pub type BorderGraph = petgraph::graph::UnGraph<BorderNode, BorderEdge>;
+pub type RegionGraph<T> = petgraph::graph::UnGraph<RegionNode<T>, RegionEdge>;
+pub type BorderGraph<T> = petgraph::graph::UnGraph<BorderNode<T>, BorderEdge>;
 
 fn poly_centroids(diagram: &voronoi::DCEL) -> Vec<voronoi::Point> {
     let mut face_centroids = vec![voronoi::Point::new(0.0, 0.0); diagram.faces.len()];
@@ -90,12 +93,15 @@ fn gen_voronoi(
     vor_diagram
 }
 
-fn get_or_insert_border_node(
+fn get_or_insert_border_node<T>(
     border_node_map: &mut HashMap<usize, BorderNodeIdx>,
-    graph: &mut BorderGraph,
+    graph: &mut BorderGraph<T>,
     diagram: &voronoi::DCEL,
     idx: usize,
-) -> BorderNodeIdx {
+) -> BorderNodeIdx
+where
+    T: Default,
+{
     if let Some(border_node) = border_node_map.get(&idx) {
         *border_node
     } else {
@@ -103,42 +109,51 @@ fn get_or_insert_border_node(
         let border_node = graph.add_node(BorderNode {
             regions: Vec::new(),
             pos: Vector2::new(pos.x.into_inner() as f32, pos.y.into_inner() as f32),
+            value: Default::default(),
         });
         border_node_map.insert(idx, border_node);
         border_node
     }
 }
-fn get_or_insert_region_node(
+fn get_or_insert_region_node<T>(
     region_node_map: &mut HashMap<usize, RegionNodeIdx>,
-    graph: &mut RegionGraph,
+    graph: &mut RegionGraph<T>,
     pos: Vector2<f32>,
     idx: usize,
-) -> RegionNodeIdx {
+) -> RegionNodeIdx
+where
+    T: Default,
+{
     if let Some(region_node) = region_node_map.get(&idx) {
         *region_node
     } else {
         let region_node = graph.add_node(RegionNode {
             borders: Vec::new(),
             pos,
+            value: Default::default(),
         });
         region_node_map.insert(idx, region_node);
         region_node
     }
 }
 
-pub fn gen_dual_graph(
+pub fn gen_dual_graph<R, B>(
     dims: Vector2<f32>,
     num_points: usize,
     num_lloyd_iterations: u32,
-) -> (RegionGraph, BorderGraph) {
+) -> (RegionGraph<R>, BorderGraph<B>)
+where
+    R: Default,
+    B: Default,
+{
     let vor_diagram = gen_voronoi(
         voronoi::Point::new(f64::from(dims.x), f64::from(dims.y)),
         num_points,
         num_lloyd_iterations,
     );
 
-    let mut region_graph = RegionGraph::new_undirected();
-    let mut border_graph = BorderGraph::new_undirected();
+    let mut region_graph = RegionGraph::<R>::new_undirected();
+    let mut border_graph = BorderGraph::<B>::new_undirected();
     let mut border_node_map: HashMap<usize, BorderNodeIdx> = HashMap::new();
     let mut region_node_map: HashMap<usize, RegionNodeIdx> = HashMap::new();
     for (i, face) in vor_diagram
@@ -238,7 +253,7 @@ pub fn gen_dual_graph(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     #[test]
     pub fn gen_dual_graph_test() {
@@ -248,7 +263,7 @@ mod tests {
             dims.y as u32,
             image::Rgb([222, 222, 222]),
         );
-        let (region_graph, border_graph) = gen_dual_graph(dims, 100, 2);
+        let (region_graph, border_graph) = gen_dual_graph::<(), ()>(dims, 6500, 2);
         draw_graph(
             &mut imgbuf,
             &region_graph,
@@ -310,7 +325,7 @@ mod tests {
         imgbuf.save("graphs.png").unwrap();
     }
 
-    fn draw_graph<
+    pub(crate) fn draw_graph<
         G: petgraph::visit::IntoNodeReferences + petgraph::visit::IntoEdgeReferences,
         N: Fn(
             &<G as petgraph::visit::Data>::NodeWeight,
