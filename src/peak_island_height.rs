@@ -4,8 +4,12 @@
 //!
 //!
 use crate::{
-    dual_graph::{RegionGraph, RegionNode, RegionNodeIdx},
+    dual_graph::{RegionEdge, RegionNode, RegionNodeIdx},
     HasElevation,
+};
+use petgraph::{
+    graph::{IndexType, NodeIndex},
+    EdgeType, Graph,
 };
 use std::collections::HashSet;
 
@@ -13,8 +17,8 @@ use num::Zero;
 use std::ops::{Add, Mul, Sub};
 
 #[derive(Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Settings<T> {
-    starting_node: RegionNodeIdx,
+pub struct Settings<T, Ix: IndexType> {
+    starting_node: NodeIndex<Ix>,
     starting_elevation: T,
     end_elevation: T,
     radius: T,
@@ -22,17 +26,17 @@ pub struct Settings<T> {
     step: T,
 }
 
-fn default_settings_f32(starting_node: RegionNodeIdx) -> Settings<f32> {
+fn default_settings_f32<Ix: IndexType>(starting_node: NodeIndex<Ix>) -> Settings<f32, Ix> {
     Settings {
         starting_node,
         starting_elevation: 1.0,
-        end_elevation: 0.0001,
         radius: 0.95,
+        end_elevation: 0.0001,
         sharpness: 0.2,
         step: 0.1,
     }
 }
-fn default_settings_f64(starting_node: RegionNodeIdx) -> Settings<f64> {
+fn default_settings_f64<Ix: IndexType>(starting_node: NodeIndex<Ix>) -> Settings<f64, Ix> {
     Settings {
         starting_node,
         starting_elevation: 1.0,
@@ -43,32 +47,34 @@ fn default_settings_f64(starting_node: RegionNodeIdx) -> Settings<f64> {
     }
 }
 
-fn fetch_or_err<T: Default>(
-    graph: &RegionGraph<T>,
-    node: RegionNodeIdx,
+fn fetch_or_err<T: Default, D: EdgeType, Ix: IndexType>(
+    graph: &Graph<RegionNode<T>, RegionEdge, D, Ix>,
+    node: NodeIndex<Ix>,
 ) -> Result<&RegionNode<T>, failure::Error> {
     Ok(graph
         .node_weight(node)
         .ok_or_else(|| failure::format_err!("Failed to fetch graph node: {:?}", node))?)
 }
-fn fetch_or_err_mut<T: Default>(
-    graph: &mut RegionGraph<T>,
-    node: RegionNodeIdx,
+fn fetch_or_err_mut<T: Default, D: EdgeType, Ix: IndexType>(
+    graph: &mut Graph<RegionNode<T>, RegionEdge, D, Ix>,
+    node: NodeIndex<Ix>,
 ) -> Result<&mut RegionNode<T>, failure::Error> {
     Ok(graph
         .node_weight_mut(node)
         .ok_or_else(|| failure::format_err!("Failed to fetch graph node: {:?}", node))?)
 }
 
-pub fn visit<T, R, H>(
-    graph: &mut RegionGraph<T>,
-    settings: Settings<H>,
+pub fn visit<T, R, H, D, Ix>(
+    graph: &mut Graph<RegionNode<T>, RegionEdge, D, Ix>,
+    settings: Settings<H, Ix>,
     rng: &mut R,
 ) -> Result<(), failure::Error>
 where
     H: Ord + PartialEq + Add<Output = H> + Mul<Output = H> + Sub<Output = H> + Zero + Copy + Sized,
     T: Default + HasElevation<H>,
     R: rand::Rng + ?Sized,
+    D: EdgeType,
+    Ix: IndexType,
     rand::distributions::Standard: rand::distributions::Distribution<H>,
 {
     let mut completed = HashSet::with_capacity(graph.node_count());
