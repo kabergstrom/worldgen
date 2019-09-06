@@ -22,3 +22,6 @@ conv = "0.3"
 num = "0.2"
 failure = "0.1"
 serde = { version = "1.0", features = ["derive"], optional = true }
+
+[dev-dependencies]
+rand_xorshift = "0.2"

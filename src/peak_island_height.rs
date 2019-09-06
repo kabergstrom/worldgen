@@ -4,9 +4,10 @@
 //!
 //!
 use crate::{
-    dual_graph::{RegionEdge, RegionNode, RegionNodeIdx},
+    dual_graph::{RegionEdge, RegionNode},
     HasElevation,
 };
+use nalgebra::Point2;
 use petgraph::{
     graph::{IndexType, NodeIndex},
     EdgeType, Graph,
@@ -114,11 +115,23 @@ where
     Ok(())
 }
 
+pub fn node_for_coordinate<T, R, D, Ix>(
+    graph: &Graph<RegionNode<T>, RegionEdge, D, Ix>,
+    point: Point2<Ix>,
+) -> Option<NodeIndex<Ix>>
+where
+    T: Default,
+    D: EdgeType,
+    Ix: IndexType,
+{
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dual_graph::{gen_dual_graph, tests::draw_graph};
+    use crate::dual_graph::gen_dual_graph;
     use nalgebra::Vector2;
+    use rand::SeedableRng;
 
     #[derive(Default)]
     struct TestInner {
@@ -143,6 +156,39 @@ mod tests {
         );
         let (region_graph, border_graph) = gen_dual_graph::<TestInner, ()>(dims, 6500, 2);
 
-        imgbuf.save("graphs.png").unwrap();
+        let mut rng =
+            rand_xorshift::XorShiftRng::from_seed([1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]);
+
+        // Start at the center
+        let center = region_graph.node_count() / 2;
+        // let settings = default_settings_f32::<u32>();
+
+        imgbuf.save("island.png").unwrap();
+    }
+
+    pub(crate) fn draw_island<
+        G: petgraph::visit::IntoNodeReferences + petgraph::visit::IntoEdgeReferences,
+        N: Fn(
+            &<G as petgraph::visit::Data>::NodeWeight,
+        ) -> (<I as image::GenericImageView>::Pixel, Vector2<f32>, i32),
+        E: Fn(
+            <G as petgraph::visit::IntoEdgeReferences>::EdgeRef,
+        ) -> (
+            <I as image::GenericImageView>::Pixel,
+            Vector2<f32>,
+            Vector2<f32>,
+        ),
+        I,
+    >(
+        imgbuf: &mut I,
+        graph: G,
+        node_color: N,
+        edge_color: E,
+    ) where
+        I: image::GenericImage,
+        I::Pixel: 'static,
+        <<I as image::GenericImageView>::Pixel as image::Pixel>::Subpixel:
+            conv::ValueInto<f32> + imageproc::definitions::Clamp<f32>,
+    {
     }
 }
