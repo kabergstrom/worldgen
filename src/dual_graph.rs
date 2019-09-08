@@ -1,4 +1,4 @@
-use nalgebra::Vector2;
+use nalgebra::{Point2, Vector2};
 use petgraph::graph::NodeIndex;
 use rand::Rng;
 use std::collections::HashMap;
@@ -11,28 +11,28 @@ pub type RegionEdgeIdx = petgraph::graph::EdgeIndex;
 
 #[derive(Debug)]
 pub struct BorderNode<T = ()> {
-    pub(crate) regions: Vec<RegionNodeIdx>,
-    pub(crate) pos: Vector2<f32>,
-    pub(crate) value: T,
+    pub regions: Vec<RegionNodeIdx>,
+    pub pos: Point2<f32>,
+    pub value: T,
 }
 #[derive(Debug)]
 pub struct BorderEdge {
-    pub(crate) region_edge: Option<RegionEdgeIdx>,
-    pub(crate) regions: Vec<RegionNodeIdx>,
+    pub region_edge: Option<RegionEdgeIdx>,
+    pub regions: Vec<RegionNodeIdx>,
 }
 #[derive(Debug)]
 pub struct RegionNode<T = ()> {
-    pub(crate) borders: Vec<BorderNodeIdx>,
-    pub(crate) pos: Vector2<f32>,
-    pub(crate) value: T,
+    pub borders: Vec<BorderNodeIdx>,
+    pub pos: Point2<f32>,
+    pub value: T,
 }
 #[derive(Debug)]
 pub struct RegionEdge {
-    pub(crate) border_edge: Option<BorderEdgeIdx>,
-    pub(crate) borders: Vec<BorderNodeIdx>,
+    pub border_edge: Option<BorderEdgeIdx>,
+    pub borders: Vec<BorderNodeIdx>,
 }
-pub type RegionGraph<T> = petgraph::graph::UnGraph<RegionNode<T>, RegionEdge>;
-pub type BorderGraph<T> = petgraph::graph::UnGraph<BorderNode<T>, BorderEdge>;
+pub type RegionGraph<T = ()> = petgraph::graph::UnGraph<RegionNode<T>, RegionEdge>;
+pub type BorderGraph<T = ()> = petgraph::graph::UnGraph<BorderNode<T>, BorderEdge>;
 
 fn poly_centroids(diagram: &voronoi::DCEL) -> Vec<voronoi::Point> {
     let mut face_centroids = vec![voronoi::Point::new(0.0, 0.0); diagram.faces.len()];
@@ -108,7 +108,7 @@ where
         let pos = diagram.vertices[idx].coordinates;
         let border_node = graph.add_node(BorderNode {
             regions: Vec::new(),
-            pos: Vector2::new(pos.x.into_inner() as f32, pos.y.into_inner() as f32),
+            pos: Point2::new(pos.x.into_inner() as f32, pos.y.into_inner() as f32),
             value: Default::default(),
         });
         border_node_map.insert(idx, border_node);
@@ -118,7 +118,7 @@ where
 fn get_or_insert_region_node<T>(
     region_node_map: &mut HashMap<usize, RegionNodeIdx>,
     graph: &mut RegionGraph<T>,
-    pos: Vector2<f32>,
+    pos: Point2<f32>,
     idx: usize,
 ) -> RegionNodeIdx
 where
@@ -165,13 +165,13 @@ where
         let region_node_idx = get_or_insert_region_node(
             &mut region_node_map,
             &mut region_graph,
-            Vector2::new(0.0, 0.0),
+            Point2::new(0.0, 0.0),
             i,
         );
         let region_node = &mut region_graph[region_node_idx];
         let mut curr_edge = face.outer_component;
         let mut prev_edge;
-        let mut pos = Vector2::new(0.0, 0.0);
+        let mut pos = Point2::new(0.0, 0.0);
         let mut num_edges = 0;
         loop {
             prev_edge = curr_edge;
@@ -206,7 +206,7 @@ where
             num_edges += 1;
             let vertex_pos =
                 vor_diagram.vertices[vor_diagram.halfedges[curr_edge].origin].coordinates;
-            pos = Vector2::new(
+            pos = Point2::new(
                 pos.x + vertex_pos.x.into_inner() as f32,
                 pos.y + vertex_pos.y.into_inner() as f32,
             );
@@ -291,7 +291,7 @@ pub(crate) mod tests {
             let regions = &edge.weight().regions;
             let pos_a = border_graph[edge.source()].pos;
             let pos_b = border_graph[edge.target()].pos;
-            let pos = (pos_a + pos_b) / 2.0;
+            let pos = Point2::from((pos_a.coords + pos_b.coords) / 2.0);
 
             for region in regions.iter() {
                 let pos_region = region_graph[*region].pos;
@@ -309,7 +309,7 @@ pub(crate) mod tests {
             let borders = &edge.weight().borders;
             let pos_a = region_graph[edge.source()].pos;
             let pos_b = region_graph[edge.target()].pos;
-            let pos = (pos_a + pos_b) / 2.0;
+            let pos = Point2::from((pos_a.coords + pos_b.coords) / 2.0);
 
             for border in borders.iter() {
                 let pos_border = border_graph[*border].pos;
@@ -322,20 +322,20 @@ pub(crate) mod tests {
                 );
             }
         }
-        imgbuf.save("graphs.png").unwrap();
+        imgbuf.save("output/graphs.png").unwrap();
     }
 
     pub(crate) fn draw_graph<
         G: petgraph::visit::IntoNodeReferences + petgraph::visit::IntoEdgeReferences,
         N: Fn(
             &<G as petgraph::visit::Data>::NodeWeight,
-        ) -> (<I as image::GenericImageView>::Pixel, Vector2<f32>, i32),
+        ) -> (<I as image::GenericImageView>::Pixel, Point2<f32>, i32),
         E: Fn(
             <G as petgraph::visit::IntoEdgeReferences>::EdgeRef,
         ) -> (
             <I as image::GenericImageView>::Pixel,
-            Vector2<f32>,
-            Vector2<f32>,
+            Point2<f32>,
+            Point2<f32>,
         ),
         I,
     >(
