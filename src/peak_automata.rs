@@ -1,133 +1,157 @@
-//! Peak Island Height
+//! Peak Automata
 //! Visits the graph, traversing every node and assigning a new elevation. This algorithm takes a starting location
 //! and elevation, and progressively lowers neighbors outwards from the starting location until a threshold is reached.
 //!
 //!
 use crate::{
-    dual_graph::{BorderEdge, BorderGraph, BorderNode, RegionEdge, RegionNode},
+    dual_graph::{RegionEdge, RegionNode},
     HasElevation,
 };
-use nalgebra::Point2;
+use nalgebra::{Point2, RealField};
+use num::Zero;
 use petgraph::{
     graph::{IndexType, NodeIndex},
     EdgeType, Graph,
 };
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    ops::{Add, Mul, Sub},
+};
 
-use num::Zero;
-use std::ops::{Add, Mul, Sub};
+#[derive(Default, Copy, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct PeakNode<T: RealField> {
+    pub node: NodeIndex,
+    pub elevation: T,
+}
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Settings<T, Ix: IndexType> {
-    starting_nodes: Vec<NodeIndex<Ix>>,
-    starting_elevation: T,
-    end_elevation: T,
+pub struct Settings<T: RealField> {
+    peak_nodes: Vec<PeakNode<T>>,
+    elevation: std::ops::Range<T>,
     radius: T,
     sharpness: T,
     step: T,
 }
+impl<T: RealField> Settings<T> {
+    pub fn with_peak_nodes<'a, I>(mut self, soft_nodes: I) -> Self
+    where
+        T: 'a,
+        I: IntoIterator<Item = PeakNode<T>>,
+    {
+        use std::iter::FromIterator;
 
-fn default_settings_f32<Ix: IndexType>(starting_nodes: Vec<NodeIndex<Ix>>) -> Settings<f32, Ix> {
-    Settings {
-        starting_nodes,
-        starting_elevation: 1.0,
-        radius: 0.95,
-        end_elevation: 0.0001,
-        sharpness: 0.2,
-        step: 0.1,
+        self.peak_nodes = Vec::from_iter(soft_nodes);
+
+        self
+    }
+
+    pub fn with_radius(mut self, radius: T) -> Self {
+        self.radius = radius;
+        self
+    }
+
+    pub fn with_sharpness(mut self, sharpness: T) -> Self {
+        self.sharpness = sharpness;
+        self
+    }
+
+    pub fn with_step(mut self, step: T) -> Self {
+        self.step = step;
+        self
+    }
+
+    pub fn with_elevation(mut self, elevation: std::ops::Range<T>) -> Self {
+        self.elevation = elevation;
+        self
+    }
+
+    pub fn default_f32() -> Settings<f32> {
+        Settings {
+            peak_nodes: Vec::default(),
+            elevation: std::ops::Range {
+                start: 1.0,
+                end: 0.0001,
+            },
+            radius: 0.95,
+            sharpness: 0.2,
+            step: 0.1,
+        }
+    }
+
+    pub fn default_f64() -> Settings<f64> {
+        Settings {
+            peak_nodes: Vec::default(),
+            elevation: std::ops::Range {
+                start: 1.0,
+                end: 0.0001,
+            },
+            radius: 0.95,
+            sharpness: 0.2,
+            step: 0.1,
+        }
     }
 }
-fn default_settings_f64<Ix: IndexType>(starting_nodes: Vec<NodeIndex<Ix>>) -> Settings<f64, Ix> {
-    Settings {
-        starting_nodes,
-        starting_elevation: 1.0,
-        end_elevation: 0.0001,
-        radius: 0.95,
-        sharpness: 0.2,
-        step: 0.1,
-    }
-}
 
-fn fetch_or_err<T: Default, D: EdgeType, Ix: IndexType>(
-    graph: &Graph<RegionNode<T>, RegionEdge, D, Ix>,
-    node: NodeIndex<Ix>,
+fn fetch_or_err<T: Default, D: EdgeType>(
+    graph: &Graph<RegionNode<T>, RegionEdge, D>,
+    node: NodeIndex,
 ) -> Result<&RegionNode<T>, failure::Error> {
     Ok(graph
         .node_weight(node)
         .ok_or_else(|| failure::format_err!("Failed to fetch graph node: {:?}", node))?)
 }
-fn fetch_or_err_mut<T: Default, D: EdgeType, Ix: IndexType>(
-    graph: &mut Graph<RegionNode<T>, RegionEdge, D, Ix>,
-    node: NodeIndex<Ix>,
+fn fetch_or_err_mut<T: Default, D: EdgeType>(
+    graph: &mut Graph<RegionNode<T>, RegionEdge, D>,
+    node: NodeIndex,
 ) -> Result<&mut RegionNode<T>, failure::Error> {
     Ok(graph
         .node_weight_mut(node)
         .ok_or_else(|| failure::format_err!("Failed to fetch graph node: {:?}", node))?)
 }
 
-pub fn visit<RT, BT, R, H, D, Ix>(
-    region_graph: &mut Graph<RegionNode<RT>, RegionEdge, D, Ix>,
-    border_graph: &mut Graph<BorderNode<BT>, BorderEdge, D, Ix>,
-    settings: &Settings<H, Ix>,
+pub fn visit<T, V, R, E>(
+    region_graph: &mut Graph<RegionNode<V>, RegionEdge, E>,
+    settings: &Settings<T>,
     rng: &mut R,
 ) -> Result<(), failure::Error>
 where
-    H: PartialOrd
-        + PartialEq
-        + Add<Output = H>
-        + Mul<Output = H>
-        + Sub<Output = H>
-        + Zero
-        + Copy
-        + Sized
-        + std::fmt::Debug,
-    RT: Default + HasElevation<H>,
+    T: RealField,
+    V: Default + HasElevation<T>,
     R: rand::Rng + ?Sized,
-    D: EdgeType,
-    Ix: IndexType,
-    rand::distributions::Standard: rand::distributions::Distribution<H>,
+    E: EdgeType,
+    rand::distributions::Standard: rand::distributions::Distribution<T>,
 {
-    for node in settings.starting_nodes.iter() {
-        single_peak(region_graph, border_graph, &settings, *node, rng)?;
+    for idx in &settings.peak_nodes {
+        single_peak(region_graph, &settings, *idx, rng)?;
     }
 
     Ok(())
 }
 
-pub fn single_peak<RT, BT, R, H, D, Ix>(
-    region_graph: &mut Graph<RegionNode<RT>, RegionEdge, D, Ix>,
-    border_graph: &mut Graph<BorderNode<BT>, BorderEdge, D, Ix>,
-    settings: &Settings<H, Ix>,
-    starting_node: NodeIndex<Ix>,
+pub fn single_peak<T, V, R, E>(
+    region_graph: &mut Graph<RegionNode<V>, RegionEdge, E>,
+    settings: &Settings<T>,
+    starting_node: PeakNode<T>,
     rng: &mut R,
 ) -> Result<(), failure::Error>
 where
-    H: PartialOrd
-        + PartialEq
-        + Add<Output = H>
-        + Mul<Output = H>
-        + Sub<Output = H>
-        + Zero
-        + Copy
-        + Sized
-        + std::fmt::Debug,
-    RT: Default + HasElevation<H>,
+    T: RealField,
+    V: Default + HasElevation<T>,
     R: rand::Rng + ?Sized,
-    D: EdgeType,
-    Ix: IndexType,
-    rand::distributions::Standard: rand::distributions::Distribution<H>,
+    E: EdgeType,
+    rand::distributions::Standard: rand::distributions::Distribution<T>,
 {
     let mut completed = HashSet::with_capacity(region_graph.node_count());
     let mut queue = Vec::with_capacity(region_graph.node_count());
 
-    let mut current_elevation = settings.starting_elevation;
-    fetch_or_err_mut(region_graph, starting_node)?
+    let mut current_elevation = starting_node.elevation;
+    fetch_or_err_mut(region_graph, starting_node.node)?
         .value
         .set_elevation(current_elevation);
 
-    queue.push(starting_node);
+    queue.push(starting_node.node);
     let mut i = 0;
-    while i < queue.len() && current_elevation >= settings.end_elevation {
+    while i < queue.len() && current_elevation >= settings.elevation.end {
         let current_node = queue[i];
         let parent_elevation = fetch_or_err(region_graph, queue[i])?.value.elevation();
         current_elevation = parent_elevation * settings.radius;
@@ -138,7 +162,7 @@ where
                 let modifier = if settings.sharpness == num::zero() {
                     parent_elevation
                 } else {
-                    rng.gen::<H>() * settings.sharpness + settings.step - settings.sharpness
+                    rng.gen::<T>() * settings.sharpness + settings.step - settings.sharpness
                 };
 
                 fetch_or_err_mut(region_graph, neighbor_idx.1)?
@@ -155,14 +179,13 @@ where
     Ok(())
 }
 
-pub fn node_for_coordinate<T, D, Ix>(
-    graph: &Graph<RegionNode<T>, RegionEdge, D, Ix>,
+pub fn node_for_coordinate<T, D>(
+    graph: &Graph<RegionNode<T>, RegionEdge, D>,
     point: Point2<f32>,
-) -> Option<NodeIndex<Ix>>
+) -> Option<NodeIndex>
 where
     T: Default,
     D: EdgeType,
-    Ix: IndexType,
 {
     use nalgebra::distance;
     use petgraph::visit::{IntoNodeReferences, NodeRef};
@@ -185,7 +208,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dual_graph::gen_dual_graph;
+    use crate::dual_graph::{gen_dual_graph, BorderGraph};
     use imageproc::drawing::Point as ImgPoint;
     use nalgebra::Vector2;
     use rand::Rng;
@@ -219,16 +242,26 @@ mod tests {
 
         // Start at the center
         let center = Point2::from(dims / 2.0);
-        let starting_points = (0..10)
+        let center_node = node_for_coordinate(&region_graph, center).expect("wut");
+        let soft_points = (0..10)
             .map(|i| {
+                let height = rng.gen_range(0.5, 0.8);
                 let x = rng.gen_range(-500.0, 500.0);
                 let y = rng.gen_range(-500.0, 500.0);
-                node_for_coordinate(&region_graph, Point2::new(center.x + x, center.y + y))
-                    .expect("wut")
+                PeakNode {
+                    node: node_for_coordinate(
+                        &region_graph,
+                        Point2::new(center.x + x, center.y + y),
+                    )
+                    .expect("wut"),
+                    elevation: height,
+                }
             })
-            .collect();
-        let settings = default_settings_f32::<u32>(starting_points);
-        visit(&mut region_graph, &mut border_graph, &settings, &mut rng);
+            .collect::<Vec<_>>();
+
+        let settings = Settings::<f32>::default_f32().with_peak_nodes(soft_points);
+
+        visit(&mut region_graph, &settings, &mut rng).unwrap();
 
         draw_island(
             &mut imgbuf,
@@ -237,7 +270,7 @@ mod tests {
             |region, border_graph| {
                 //let color = region.value.height as i32;
                 let elevation = region.value.elevation();
-                let color = if elevation > 0.5 {
+                let color = if elevation > 0.3 {
                     (255.0 / (1.0 - elevation)) as u8
                 } else {
                     0

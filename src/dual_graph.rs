@@ -1,5 +1,6 @@
-use nalgebra::{Point2, Vector2};
-use petgraph::graph::NodeIndex;
+use crate::HasElevation;
+use nalgebra::{Point2, RealField, Vector2};
+use petgraph::{graph::NodeIndex, visit::EdgeRef, Graph};
 use rand::Rng;
 use std::collections::HashMap;
 use voronoi::voronoi;
@@ -37,7 +38,7 @@ pub type BorderGraph<T = ()> = petgraph::graph::UnGraph<BorderNode<T>, BorderEdg
 fn poly_centroids(diagram: &voronoi::DCEL) -> Vec<voronoi::Point> {
     let mut face_centroids = vec![voronoi::Point::new(0.0, 0.0); diagram.faces.len()];
     let mut num_face_vertices = vec![0; diagram.faces.len()];
-    for edge in diagram.halfedges.iter() {
+    for edge in &diagram.halfedges {
         if !edge.alive {
             continue;
         }
@@ -93,6 +94,7 @@ fn gen_voronoi(
     vor_diagram
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn get_or_insert_border_node<T>(
     border_node_map: &mut HashMap<usize, BorderNodeIdx>,
     graph: &mut BorderGraph<T>,
@@ -137,6 +139,7 @@ where
     }
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 pub fn gen_dual_graph<R, B>(
     dims: Vector2<f32>,
     num_points: usize,
@@ -216,7 +219,7 @@ where
         }
         region_node.pos = pos / num_edges as f32;
     }
-    use petgraph::visit::EdgeRef;
+
     for edge in border_graph.edge_references() {
         let regions = &edge.weight().regions;
         if regions.len() > 1 {
