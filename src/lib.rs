@@ -29,8 +29,8 @@ pub trait HasTemperature<T: RealField> {
 }
 
 pub trait HasWind<T: RealField> {
-    fn vector(&self) -> Vector2<T>;
-    fn set_vector(&mut self, vector: Vector2<T>);
+    fn wind_vector(&self) -> Vector2<T>;
+    fn set_wind_vector(&mut self, vector: Vector2<T>);
 }
 
 pub trait AnnualRainfall<T: RealField> {

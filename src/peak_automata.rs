@@ -245,7 +245,7 @@ mod tests {
 
         visit(&mut region_graph, &settings, &mut rng).unwrap();
 
-        draw_island(
+        draw_graph(
             &mut imgbuf,
             &region_graph,
             &border_graph,
@@ -276,7 +276,7 @@ mod tests {
         imgbuf.save("output/island.png").unwrap();
     }
 
-    pub(crate) fn draw_island<
+    pub(crate) fn draw_graph<
         RG: IntoNodeReferences,
         N: Fn(
             &<RG as petgraph::visit::Data>::NodeWeight,
@@ -376,7 +376,7 @@ mod rbf_interp_tests {
 
         visit(&mut region_graph, &settings, &mut rng).unwrap();
 
-        draw_island(
+        draw_graph(
             &mut imgbuf,
             &region_graph,
             &border_graph,
@@ -416,7 +416,7 @@ mod rbf_interp_tests {
         imgbuf.save("output/rbf_interp.png").unwrap();
     }
 
-    fn draw_island<
+    fn draw_graph<
         RG: IntoNodeReferences + NodeCount,
         N: Fn(&<RG as petgraph::visit::Data>::NodeWeight, &BorderGraph) -> Vec<Point2<i32>>,
         P: (Fn(
@@ -691,7 +691,7 @@ mod spade_tests {
             dt.insert(node.1);
         }
 
-        draw_island(
+        draw_graph(
             &mut imgbuf,
             &region_graph,
             &border_graph,
@@ -718,7 +718,7 @@ mod spade_tests {
         imgbuf.save("output/dt_spade_interp.png").unwrap();
     }
 
-    fn draw_island<
+    fn draw_graph<
         RG: IntoNodeReferences,
         N: Fn(&<RG as petgraph::visit::Data>::NodeWeight, &BorderGraph) -> Vec<Point2<i32>>,
         P: (Fn(

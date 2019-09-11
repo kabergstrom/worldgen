@@ -38,6 +38,17 @@ impl<T> HasValue for RegionNode<T> {
     }
 }
 
+impl<T> HasValue for BorderNode<T> {
+    type Value = T;
+
+    fn value(&self) -> &Self::Value {
+        &self.value
+    }
+    fn value_mut(&mut self) -> &mut Self::Value {
+        &mut self.value
+    }
+}
+
 #[derive(Debug)]
 pub struct RegionEdge {
     pub border_edge: Option<BorderEdgeIdx>,
