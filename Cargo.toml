@@ -11,7 +11,9 @@ default = ["serde-1"]
 serde-1 = ["serde"]
 
 [dependencies]
-voronoi = { git = "https://github.com/kabergstrom/rust_voronoi.git" }
+voronoi = { path = "../../rust_voronoi" }
+rbf_interp = { path = "../../rbf_interp" }
+spade = "1.8"
 petgraph = "0.4"
 image = "0.22"
 imageproc = "0.19"
@@ -21,7 +23,9 @@ rand = "0.7.0"
 conv = "0.3"
 num = "0.2"
 failure = "0.1"
+rayon = "1"
 serde = { version = "1.0", features = ["derive"], optional = true }
+smallvec = "0.6"
 
 [dev-dependencies]
 rand_xorshift = "0.2"

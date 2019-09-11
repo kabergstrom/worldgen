@@ -2,18 +2,19 @@ use crate::{
     dual_graph::{RegionEdge, RegionNode},
     HasElevation, HasWind,
 };
-use nalgebra::RealField;
+use nalgebra::{RealField, Vector2};
 use petgraph::{EdgeType, Graph};
 
-pub struct Settings<T> {
+pub struct Settings<T: RealField> {
     duration: usize, // 1 unit = 1 day
-    base_speed: T,
+    start_speed: Option<T>,
+    start_direction: Option<Vector2<T>>,
 }
 
 pub fn visit<T, V, R, E>(
-    region_graph: &mut Graph<RegionNode<V>, RegionEdge, E>,
-    settings: &Settings<T>,
-    rng: &mut R,
+    _region_graph: &mut Graph<RegionNode<V>, RegionEdge, E>,
+    _settings: &Settings<T>,
+    _rng: &mut R,
 ) -> Result<(), failure::Error>
 where
     T: RealField,
@@ -23,4 +24,10 @@ where
     rand::distributions::Standard: rand::distributions::Distribution<T>,
 {
     Ok(())
+}
+
+#[cfg(test)]
+pub mod tests {
+    #[test]
+    fn wind_test() {}
 }

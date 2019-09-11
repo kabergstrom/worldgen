@@ -1,7 +1,6 @@
-use crate::HasElevation;
-use nalgebra::{Point2, RealField, Vector2};
-use petgraph::{graph::NodeIndex, visit::EdgeRef, Graph};
-use rand::Rng;
+use crate::HasValue;
+use nalgebra::{Point2, Vector2};
+use petgraph::{graph::NodeIndex, visit::EdgeRef};
 use std::collections::HashMap;
 use voronoi::voronoi;
 
@@ -27,6 +26,18 @@ pub struct RegionNode<T = ()> {
     pub pos: Point2<f32>,
     pub value: T,
 }
+
+impl<T> HasValue for RegionNode<T> {
+    type Value = T;
+
+    fn value(&self) -> &Self::Value {
+        &self.value
+    }
+    fn value_mut(&mut self) -> &mut Self::Value {
+        &mut self.value
+    }
+}
+
 #[derive(Debug)]
 pub struct RegionEdge {
     pub border_edge: Option<BorderEdgeIdx>,
@@ -63,28 +74,74 @@ fn poly_centroids(diagram: &voronoi::DCEL) -> Vec<voronoi::Point> {
     face_centroids
 }
 
-fn gen_points(count: usize, bounds: &voronoi::Point) -> Vec<voronoi::Point> {
-    let mut rng = rand::thread_rng();
-    (0..count)
-        .map(|_| {
+fn contains(point: &voronoi::Point, points: &[voronoi::Point]) -> bool {
+    let epsilon = 0.001;
+
+    for v in points {
+        if (point.x.into_inner() - v.x.into_inner()).abs() < epsilon
+            && (point.y.into_inner() - v.y.into_inner()).abs() < epsilon
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn gen_points<R>(count: usize, bounds: &voronoi::Point, rng: &mut R) -> Vec<voronoi::Point>
+where
+    R: rand::Rng + ?Sized,
+{
+    let mut points = Vec::with_capacity(count);
+    for i in (0..count) {
+        let mut point = {
             let x: f64 = rng.sample(rand::distributions::Standard);
             let y: f64 = rng.sample(rand::distributions::Standard);
             voronoi::Point::new(x * bounds.x.into_inner(), y * bounds.y.into_inner())
-        })
-        .collect()
+        };
+
+        while contains(&point, &points) {
+            point = {
+                let x: f64 = rng.sample(rand::distributions::Standard);
+                let y: f64 = rng.sample(rand::distributions::Standard);
+                voronoi::Point::new(x * bounds.x.into_inner(), y * bounds.y.into_inner())
+            };
+        }
+        points.push(point);
+    }
+
+    points.sort_unstable_by_key(|p| p.y);
+
+    if points.len() >= 2 {
+        let last = points.len() - 1;
+        let secondlast = points.len() - 2;
+
+        let epsilon = 0.001;
+        let biggest = points[last].y.into_inner();
+        let maybe_also_biggest = points[secondlast].y.into_inner();
+        if (biggest - maybe_also_biggest) < epsilon {
+            points[last].y = (biggest + epsilon).into();
+        }
+    }
+
+    points
 }
 
-fn gen_voronoi(
+fn gen_voronoi<R>(
     dims: voronoi::Point,
     num_points: usize,
     num_lloyd_iterations: u32,
-) -> voronoi::DCEL {
-    let points = gen_points(num_points, &dims);
+    rng: &mut R,
+) -> voronoi::DCEL
+where
+    R: rand::Rng + ?Sized,
+{
+    let points = gen_points(num_points, &dims, rng);
     let mut vor_diagram;
     let mut points: Vec<voronoi::Point> = points;
     let mut i = 0;
     loop {
-        vor_diagram = voronoi(points.clone(), dims.x.into());
+        vor_diagram = voronoi(&points.clone(), dims.x.into());
         if i == num_lloyd_iterations {
             break;
         }
@@ -108,6 +165,7 @@ where
         *border_node
     } else {
         let pos = diagram.vertices[idx].coordinates;
+
         let border_node = graph.add_node(BorderNode {
             regions: Vec::new(),
             pos: Point2::new(pos.x.into_inner() as f32, pos.y.into_inner() as f32),
@@ -140,23 +198,26 @@ where
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-pub fn gen_dual_graph<R, B>(
+pub fn gen_dual_graph<RN, BN, R>(
     dims: Vector2<f32>,
     num_points: usize,
     num_lloyd_iterations: u32,
-) -> (RegionGraph<R>, BorderGraph<B>)
+    rng: &mut R,
+) -> (RegionGraph<RN>, BorderGraph<BN>)
 where
-    R: Default,
-    B: Default,
+    R: rand::Rng + ?Sized,
+    RN: Default,
+    BN: Default,
 {
     let vor_diagram = gen_voronoi(
         voronoi::Point::new(f64::from(dims.x), f64::from(dims.y)),
         num_points,
         num_lloyd_iterations,
+        rng,
     );
 
-    let mut region_graph = RegionGraph::<R>::new_undirected();
-    let mut border_graph = BorderGraph::<B>::new_undirected();
+    let mut region_graph = RegionGraph::<RN>::new_undirected();
+    let mut border_graph = BorderGraph::<BN>::new_undirected();
     let mut border_node_map: HashMap<usize, BorderNodeIdx> = HashMap::new();
     let mut region_node_map: HashMap<usize, RegionNodeIdx> = HashMap::new();
     for (i, face) in vor_diagram
@@ -258,6 +319,8 @@ where
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use rand::SeedableRng;
+
     #[test]
     pub fn gen_dual_graph_test() {
         let dims = Vector2::new(1024.0, 1024.0);
@@ -266,7 +329,12 @@ pub(crate) mod tests {
             dims.y as u32,
             image::Rgb([222, 222, 222]),
         );
-        let (region_graph, border_graph) = gen_dual_graph::<(), ()>(dims, 6500, 2);
+
+        let mut rng =
+            rand_xorshift::XorShiftRng::from_seed([5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]);
+
+        let (region_graph, border_graph) =
+            gen_dual_graph::<(), (), rand_xorshift::XorShiftRng>(dims, 6500, 2, &mut rng);
         draw_graph(
             &mut imgbuf,
             &region_graph,

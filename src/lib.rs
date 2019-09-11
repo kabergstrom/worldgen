@@ -6,6 +6,13 @@ pub mod dual_graph;
 pub mod peak_automata;
 pub mod simple_wind;
 
+pub trait HasValue {
+    type Value;
+
+    fn value(&self) -> &Self::Value;
+    fn value_mut(&mut self) -> &mut Self::Value;
+}
+
 pub trait HasElevation<T: RealField> {
     fn elevation(&self) -> T;
     fn set_elevation(&mut self, height: T);
