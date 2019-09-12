@@ -14,7 +14,7 @@ serde-1 = ["serde"]
 voronoi = { path = "../../rust_voronoi" }
 rbf_interp = { path = "../../rbf_interp" }
 spade = "1.8"
-petgraph = "0.4"
+petgraph = { version = "0.4", features = ["serde-1"] }
 image = "0.22"
 imageproc = "0.19"
 itertools = "0.8"
@@ -26,6 +26,7 @@ failure = "0.1"
 rayon = "1"
 serde = { version = "1.0", features = ["derive"], optional = true }
 smallvec = "0.6"
+delaunator = "0.2"
 
 [dev-dependencies]
 rand_xorshift = "0.2"

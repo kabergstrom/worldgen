@@ -104,7 +104,7 @@ where
     R: rand::Rng + ?Sized,
 {
     let mut points = Vec::with_capacity(count);
-    for i in (0..count) {
+    for _ in 0..count {
         let mut point = {
             let x: f64 = rng.sample(rand::distributions::Standard);
             let y: f64 = rng.sample(rand::distributions::Standard);
@@ -138,6 +138,100 @@ where
     points
 }
 
+fn gen_voronoi_delaunay<R>(
+    dims: voronoi::Point,
+    num_points: usize,
+    num_lloyd_iterations: u32,
+    rng: &mut R,
+) -> (
+    Vec<delaunator::Point>,
+    Vec<delaunator::Point>,
+    Vec<Vec<delaunator::Point>>,
+)
+where
+    R: rand::Rng + ?Sized,
+{
+    let mut points: Vec<_> = gen_points(num_points, &dims, rng)
+        .iter()
+        .map(|p| delaunator::Point { x: *p.x, y: *p.y })
+        .collect();
+    let mut triangulation;
+    let mut i = 0;
+    let mut voronoi_points;
+    let mut voronoi_polys;
+    loop {
+        triangulation = delaunator::triangulate(points.as_slice()).unwrap();
+        voronoi_points = Vec::new();
+        voronoi_polys = Vec::new();
+        let mut triangles_seen = vec![false; triangulation.triangles.len()];
+        // the tri_iter defines the point from which we start to iterate through
+        'triangle_loop: for (tri_iter, _) in triangulation.triangles.iter().enumerate() {
+            let mut curr_tri = tri_iter;
+            // if the halfedge has already been visited or the halfedge is from the hull, continue
+            if triangles_seen[curr_tri] || curr_tri == delaunator::EMPTY {
+                continue;
+            }
+            let mut num_poly_points = 0;
+            let mut poly_centroid = delaunator::Point { x: 0.0, y: 0.0 };
+            let mut vor_poly_points = Vec::new();
+            loop {
+                triangles_seen[curr_tri] = true;
+                let pt_idx = triangulation.triangles[curr_tri];
+                let a = &points[pt_idx];
+                curr_tri = delaunator::next_halfedge(curr_tri);
+                let pt_idx = triangulation.triangles[curr_tri];
+                let b = &points[pt_idx];
+                curr_tri = delaunator::next_halfedge(curr_tri);
+                let pt_idx = triangulation.triangles[curr_tri];
+                let c = &points[pt_idx];
+                let x_sum = a.x + b.x + c.x;
+                let y_sum = a.y + b.y + c.y;
+                // a vertex in the voronoi polygon
+                let voronoi_pt = delaunator::Point {
+                    x: x_sum / 3.0,
+                    y: y_sum / 3.0,
+                };
+                // calculate the poly centroid
+                poly_centroid.x += voronoi_pt.x;
+                poly_centroid.y += voronoi_pt.y;
+                num_poly_points += 1;
+                let next_tri = triangulation.halfedges[curr_tri];
+                // if the poly has a point from the hull, bail
+                if next_tri == delaunator::EMPTY {
+                    continue 'triangle_loop;
+                }
+                // only produce poly points if we are not doing a lloyd iteration
+                if i == num_lloyd_iterations {
+                    vor_poly_points.push(voronoi_pt.clone());
+                }
+                // done when we are back at the starting halfedge
+                if next_tri == tri_iter {
+                    break;
+                }
+                curr_tri = next_tri;
+            }
+            voronoi_points.push(delaunator::Point {
+                x: poly_centroid.x / num_poly_points as f64,
+                y: poly_centroid.y / num_poly_points as f64,
+            });
+            if i == num_lloyd_iterations {
+                voronoi_polys.push(vor_poly_points);
+            }
+        }
+        if i == num_lloyd_iterations {
+            break;
+        }
+        // during lloyd relaxation, put hull points into the point set
+        for hull_pt in triangulation.hull {
+            voronoi_points.push(points[hull_pt].clone());
+        }
+        points = voronoi_points;
+        // points = poly_centroids(&vor_diagram);
+        i += 1;
+    }
+    (points, voronoi_points, voronoi_polys)
+}
+
 fn gen_voronoi<R>(
     dims: voronoi::Point,
     num_points: usize,
@@ -152,7 +246,7 @@ where
     let mut points: Vec<voronoi::Point> = points;
     let mut i = 0;
     loop {
-        vor_diagram = voronoi(&points.clone(), dims.x.into());
+        vor_diagram = voronoi(points.clone(), dims.x.into());
         if i == num_lloyd_iterations {
             break;
         }
@@ -331,6 +425,53 @@ where
 pub(crate) mod tests {
     use super::*;
     use rand::SeedableRng;
+
+    #[test]
+    pub fn gen_voronoi_delaunay_test() {
+        let dims = voronoi::Point {
+            x: 1024.0.into(),
+            y: 1024.0.into(),
+        };
+        let mut rng =
+            rand_xorshift::XorShiftRng::from_seed([1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]);
+        let (seed_points, voronoi_points, voronoi_polys) =
+            gen_voronoi_delaunay::<rand_xorshift::XorShiftRng>(dims, 100, 0, &mut rng);
+        let mut imgbuf = image::ImageBuffer::from_pixel(
+            *dims.x as u32,
+            *dims.y as u32,
+            image::Rgb([222, 222, 222]),
+        );
+        for pt in &voronoi_points {
+            imageproc::drawing::draw_filled_circle_mut(
+                &mut imgbuf,
+                (pt.x as i32, pt.y as i32),
+                2,
+                image::Rgb([222, 0, 0]),
+            );
+        }
+        for pt in &seed_points {
+            imageproc::drawing::draw_filled_circle_mut(
+                &mut imgbuf,
+                (pt.x as i32, pt.y as i32),
+                2,
+                image::Rgb([0, 222, 0]),
+            );
+        }
+        for poly in &voronoi_polys {
+            for i in 1..poly.len() {
+                let start = &poly[i - 1];
+                let end = &poly[i % poly.len()];
+                imageproc::drawing::draw_antialiased_line_segment_mut(
+                    &mut imgbuf,
+                    (start.x as i32, start.y as i32),
+                    (end.x as i32, end.y as i32),
+                    image::Rgb([0, 0, 222]),
+                    imageproc::pixelops::interpolate,
+                );
+            }
+        }
+        imgbuf.save("output/delaunay_test.png").unwrap();
+    }
 
     #[test]
     pub fn gen_dual_graph_test() {
